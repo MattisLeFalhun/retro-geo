@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retro-Geo | Sprint Retrospective Game</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <!-- Supabase JS Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <header class="header">
+            <h1 class="logo">Retro-Geo</h1>
+            <div class="header-right">
+                <span id="current-user-display"></span>
+                <button class="btn-admin" onclick="toggleAdminPanel()">Admin</button>
+            </div>
+        </header>
+
+        <!-- Notification Container -->
+        <div id="notification-container"></div>
+
+        <!-- Admin Panel (Overlay) -->
+        <div id="admin-panel" class="admin-panel">
+            <div class="admin-panel-content">
+                <button class="admin-close" onclick="toggleAdminPanel()">&times;</button>
+                <h2>Admin Panel</h2>
+
+                <div id="admin-login-section">
+                    <input type="password" id="admin-password" placeholder="Admin password">
+                    <button onclick="adminLogin()">Login</button>
+                </div>
+
+                <div id="admin-controls" style="display: none;">
+                    <button id="btn-start-phase2" onclick="adminStartPhase2()">
+                        Start Phase 2 (Guessing)
+                    </button>
+                    <button id="btn-reveal" onclick="adminReveal()">
+                        Reveal Guesses
+                    </button>
+                    <button id="btn-next-event" onclick="adminNextEvent()">
+                        Next Event
+                    </button>
+                    <button id="btn-reset" class="btn-danger" onclick="adminReset()">
+                        Reset Game
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- View: Username Selection -->
+        <div id="view-username" class="view active">
+            <div class="container">
+                <div class="card centered">
+                    <h2>Who are you?</h2>
+                    <p>Select your name to join the retrospective</p>
+                    <div id="username-buttons" class="username-grid"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- View: Event Input (Phase 1) -->
+        <div id="view-input" class="view">
+            <div class="container">
+                <div class="two-column">
+                    <div class="card">
+                        <h2>Add an Event</h2>
+                        <p>Share something that happened during the sprint</p>
+
+                        <div class="form-group">
+                            <label for="event-text">What happened?</label>
+                            <textarea id="event-text" placeholder="Describe an event from the sprint..." rows="4"></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label>How did it feel?</label>
+                            <p class="hint">Click on the grid to position your feeling</p>
+                            <div class="grid-container">
+                                <canvas id="input-grid"></canvas>
+                            </div>
+                        </div>
+
+                        <button id="submit-event-btn" onclick="submitEvent()" disabled>
+                            Submit Event
+                        </button>
+                    </div>
+
+                    <div class="card">
+                        <h2>Your Events</h2>
+                        <div id="user-events-list" class="events-list">
+                            <p class="no-events">No events submitted yet</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- View: Guessing (Phase 2) -->
+        <div id="view-guess" class="view">
+            <div class="container">
+                <div class="card centered">
+                    <div class="round-indicator" id="guess-round-indicator">Round 1/10</div>
+                    <h2>Guess the Feeling</h2>
+
+                    <div class="event-display">
+                        <blockquote id="guess-event-text"></blockquote>
+                        <p class="author">Written by: <strong id="guess-event-author"></strong></p>
+                    </div>
+
+                    <p class="hint">Where do you think <span id="guess-event-author-hint"></span> placed this event?</p>
+
+                    <div class="grid-container">
+                        <canvas id="guess-grid"></canvas>
+                    </div>
+
+                    <div id="guess-status"></div>
+
+                    <button id="submit-guess-btn" onclick="submitGuess()" disabled>
+                        Submit Guess
+                    </button>
+
+                    <div id="guessers-display" class="guessers-display">
+                        <p>No guesses yet...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- View: Reveal (Phase 2) -->
+        <div id="view-reveal" class="view">
+            <div class="container">
+                <div class="card centered wide">
+                    <div class="round-indicator" id="reveal-round-indicator">Round 1/10</div>
+                    <h2>Results</h2>
+
+                    <div class="event-display">
+                        <blockquote id="reveal-event-text"></blockquote>
+                        <p class="author">Written by: <strong id="reveal-event-author"></strong></p>
+                    </div>
+
+                    <div class="reveal-layout">
+                        <div class="grid-container">
+                            <canvas id="reveal-grid"></canvas>
+                        </div>
+
+                        <div class="rankings">
+                            <h3>Rankings</h3>
+                            <div id="rankings-list"></div>
+                        </div>
+                    </div>
+
+                    <p class="discussion-prompt">
+                        Time for <strong id="discussion-author"></strong> to share their thoughts!
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- View: Game Over -->
+        <div id="view-gameover" class="view">
+            <div class="container">
+                <div class="card centered wide">
+                    <h2>Game Complete!</h2>
+                    <p>All events have been discussed. Thank you for participating!</p>
+
+                    <div class="final-scoreboard">
+                        <h3>Final Scoreboard</h3>
+                        <div id="final-scores-list" class="final-scores-list">
+                            <p>Loading scores...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/js/supabase.js"></script>
+    <script src="/js/grid.js"></script>
+    <script src="/js/app.js"></script>
+</body>
+</html>
