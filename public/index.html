@@ -43,6 +43,12 @@
                     <button id="btn-next-event" onclick="adminNextEvent()">
                         Next Event
                     </button>
+                    <button id="btn-start-phase3" onclick="adminStartPhase3()">
+                        Start Phase 3 (Voting)
+                    </button>
+                    <button id="btn-reveal-voting" onclick="adminRevealVoting()">
+                        Reveal Voting Results
+                    </button>
                     <button id="btn-reset" class="btn-danger" onclick="adminReset()">
                         Reset Game
                     </button>
@@ -170,6 +176,38 @@
                         <div id="final-scores-list" class="final-scores-list">
                             <p>Loading scores...</p>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- View: Voting (Phase 3) -->
+        <div id="view-voting" class="view">
+            <div class="container">
+                <div class="card centered wide">
+                    <h2>Vote for Discussion Topics</h2>
+                    <p>You have <strong><span id="votes-remaining">3</span></strong> votes to distribute. Select events you want to discuss further.</p>
+
+                    <div id="voting-status" class="voting-status">
+                        <p>Voted: <span id="voters-list">No votes yet...</span></p>
+                    </div>
+
+                    <div id="voting-events-list" class="voting-events-list">
+                        <!-- Events will be populated here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- View: Voting Results (Phase 3.5) -->
+        <div id="view-voting-results" class="view">
+            <div class="container">
+                <div class="card centered wide">
+                    <h2>Voting Results</h2>
+                    <p>Events ranked by total votes</p>
+
+                    <div id="voting-results-list" class="voting-results-list">
+                        <!-- Results will be populated here -->
                     </div>
                 </div>
             </div>

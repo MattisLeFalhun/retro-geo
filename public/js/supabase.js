@@ -132,6 +132,85 @@ async function hasUserGuessed(eventId, guesser) {
     return data !== null;
 }
 
+// ========== Votes API ==========
+
+async function submitVote(eventId, voter, voteCount) {
+    const { data, error } = await getSupabase()
+        .from('votes')
+        .upsert([{
+            event_id: eventId,
+            voter,
+            vote_count: voteCount
+        }], { onConflict: 'event_id,voter' })
+        .select()
+        .single();
+
+    if (error) throw error;
+    return data;
+}
+
+async function removeVote(eventId, voter) {
+    const { error } = await getSupabase()
+        .from('votes')
+        .delete()
+        .eq('event_id', eventId)
+        .eq('voter', voter);
+
+    if (error) throw error;
+    return true;
+}
+
+async function getVotesByVoter(voter) {
+    const { data, error } = await getSupabase()
+        .from('votes')
+        .select('*')
+        .eq('voter', voter);
+
+    if (error) throw error;
+    return data;
+}
+
+async function getAllVotes() {
+    const { data, error } = await getSupabase()
+        .from('votes')
+        .select('*');
+
+    if (error) throw error;
+    return data;
+}
+
+async function getVoteTotalsPerEvent() {
+    const events = await getAllEvents();
+    const votes = await getAllVotes();
+
+    // Sum votes per event
+    const voteTotals = {};
+    votes.forEach(vote => {
+        if (!voteTotals[vote.event_id]) {
+            voteTotals[vote.event_id] = 0;
+        }
+        voteTotals[vote.event_id] += vote.vote_count;
+    });
+
+    // Combine with event data and sort by votes
+    return events.map(event => ({
+        ...event,
+        totalVotes: voteTotals[event.id] || 0
+    })).sort((a, b) => b.totalVotes - a.totalVotes);
+}
+
+async function getVotersWhoHaveVoted() {
+    const { data, error } = await getSupabase()
+        .from('votes')
+        .select('voter');
+
+    if (error) throw error;
+
+    // Return unique voters
+    const uniqueVoters = [...new Set(data.map(v => v.voter))];
+    return uniqueVoters;
+}
+
 // ========== Game State API ==========
 
 async function getGameState() {
@@ -206,7 +285,25 @@ async function nextEvent() {
     });
 }
 
+async function startPhase3() {
+    return await updateGameState({
+        phase: 3,
+        current_event_id: null,
+        revealed: false,
+        voting_revealed: false
+    });
+}
+
+async function revealVotingResults() {
+    return await updateGameState({
+        voting_revealed: true
+    });
+}
+
 async function resetGame() {
+    // Delete all votes
+    await getSupabase().from('votes').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+
     // Delete all guesses
     await getSupabase().from('guesses').delete().neq('id', '00000000-0000-0000-0000-000000000000');
 
@@ -218,6 +315,7 @@ async function resetGame() {
         phase: 1,
         current_event_id: null,
         revealed: false,
+        voting_revealed: false,
         processed_events: [],
         reset_at: new Date().toISOString()
     });
@@ -251,6 +349,16 @@ function subscribeToEvents(callback) {
         .on('postgres_changes',
             { event: 'INSERT', schema: 'public', table: 'events' },
             payload => callback(payload.new)
+        )
+        .subscribe();
+}
+
+function subscribeToVotes(callback) {
+    return getSupabase()
+        .channel('votes_changes')
+        .on('postgres_changes',
+            { event: '*', schema: 'public', table: 'votes' },
+            payload => callback(payload)
         )
         .subscribe();
 }

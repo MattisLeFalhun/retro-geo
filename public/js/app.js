@@ -16,7 +16,9 @@ const state = {
     revealGrid: null,
     hasGuessed: false,
     guessChannel: null,
-    lastResetAt: null
+    votesChannel: null,
+    lastResetAt: null,
+    userVotes: {}  // { eventId: voteCount }
 };
 
 // ========== View Management ==========
@@ -99,6 +101,12 @@ async function navigateBasedOnGameState() {
         } else {
             showView('view-gameover');
             await showFinalScoreboard();
+        }
+    } else if (gameState.phase === 3) {
+        if (gameState.voting_revealed) {
+            await showVotingResultsView();
+        } else {
+            await showVotingView();
         }
     }
 }
@@ -462,6 +470,170 @@ async function showFinalScoreboard() {
     }
 }
 
+// ========== Voting View (Phase 3) ==========
+
+async function showVotingView() {
+    showView('view-voting');
+
+    // Load user's existing votes
+    const userVotes = await getVotesByVoter(state.currentUser);
+    state.userVotes = {};
+    userVotes.forEach(vote => {
+        state.userVotes[vote.event_id] = vote.vote_count;
+    });
+
+    // Load all events
+    const events = await getAllEvents();
+
+    // Render events list
+    renderVotingEvents(events);
+
+    // Update votes remaining display
+    updateVotesRemaining();
+
+    // Update voters display
+    await updateVotersDisplay();
+
+    // Subscribe to votes for real-time updates
+    subscribeToVotesUpdates();
+}
+
+function renderVotingEvents(events) {
+    const container = document.getElementById('voting-events-list');
+
+    container.innerHTML = events.map(event => {
+        const currentVotes = state.userVotes[event.id] || 0;
+        return `
+            <div class="voting-event-card" data-event-id="${event.id}">
+                <div class="voting-event-content">
+                    <p class="voting-event-text">${escapeHtml(event.text)}</p>
+                    <small class="voting-event-author">by ${event.author}</small>
+                </div>
+                <div class="voting-controls">
+                    <button class="vote-btn vote-minus" onclick="adjustVote('${event.id}', -1)" ${currentVotes === 0 ? 'disabled' : ''}>-</button>
+                    <span class="vote-count" id="vote-count-${event.id}">${currentVotes}</span>
+                    <button class="vote-btn vote-plus" onclick="adjustVote('${event.id}', 1)">+</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function adjustVote(eventId, delta) {
+    const currentVotes = state.userVotes[eventId] || 0;
+    const totalUsedVotes = Object.values(state.userVotes).reduce((a, b) => a + b, 0);
+
+    const newVotes = currentVotes + delta;
+
+    // Validation
+    if (newVotes < 0) return;
+    if (newVotes > 3) {
+        showNotification('Maximum 3 votes per event', 'error');
+        return;
+    }
+    if (delta > 0 && totalUsedVotes >= 3) {
+        showNotification('You have used all 3 votes', 'error');
+        return;
+    }
+
+    try {
+        if (newVotes === 0) {
+            await removeVote(eventId, state.currentUser);
+            delete state.userVotes[eventId];
+        } else {
+            await submitVote(eventId, state.currentUser, newVotes);
+            state.userVotes[eventId] = newVotes;
+        }
+
+        // Update UI
+        document.getElementById(`vote-count-${eventId}`).textContent = newVotes;
+        updateVotesRemaining();
+        updateVoteButtons(eventId, newVotes);
+
+    } catch (error) {
+        console.error('Error adjusting vote:', error);
+        showNotification('Error updating vote', 'error');
+    }
+}
+
+function updateVotesRemaining() {
+    const totalUsed = Object.values(state.userVotes).reduce((a, b) => a + b, 0);
+    const remaining = 3 - totalUsed;
+    document.getElementById('votes-remaining').textContent = remaining;
+
+    // Disable all plus buttons if no votes remaining
+    document.querySelectorAll('.vote-plus').forEach(btn => {
+        const eventId = btn.closest('.voting-event-card').dataset.eventId;
+        const currentVotes = state.userVotes[eventId] || 0;
+        btn.disabled = remaining === 0 || currentVotes >= 3;
+    });
+}
+
+function updateVoteButtons(eventId, voteCount) {
+    const card = document.querySelector(`[data-event-id="${eventId}"]`);
+    if (!card) return;
+
+    const minusBtn = card.querySelector('.vote-minus');
+    minusBtn.disabled = voteCount === 0;
+}
+
+async function updateVotersDisplay() {
+    const voters = await getVotersWhoHaveVoted();
+    const display = document.getElementById('voters-list');
+
+    if (voters.length === 0) {
+        display.textContent = 'No votes yet...';
+    } else {
+        display.textContent = voters.join(', ');
+    }
+}
+
+function subscribeToVotesUpdates() {
+    if (state.votesChannel) {
+        state.votesChannel.unsubscribe();
+    }
+
+    state.votesChannel = subscribeToVotes(() => {
+        updateVotersDisplay();
+    });
+}
+
+// ========== Voting Results View (Phase 3.5) ==========
+
+async function showVotingResultsView() {
+    showView('view-voting-results');
+
+    const eventsWithVotes = await getVoteTotalsPerEvent();
+    renderVotingResults(eventsWithVotes);
+}
+
+function renderVotingResults(events) {
+    const container = document.getElementById('voting-results-list');
+
+    container.innerHTML = events.map((event, index) => {
+        const rank = index + 1;
+        const medalClass = rank === 1 ? 'gold' : rank === 2 ? 'silver' : rank === 3 ? 'bronze' : '';
+        const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '';
+
+        return `
+            <div class="voting-result-item ${medalClass}">
+                <div class="result-rank">
+                    <span class="medal">${medal}</span>
+                    <span class="rank-number">#${rank}</span>
+                </div>
+                <div class="result-content">
+                    <p class="result-text">${escapeHtml(event.text)}</p>
+                    <small class="result-author">by ${event.author}</small>
+                </div>
+                <div class="result-votes">
+                    <span class="vote-total">${event.totalVotes}</span>
+                    <span class="vote-label">votes</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
 // ========== Admin Panel ==========
 
 function toggleAdminPanel() {
@@ -500,11 +672,18 @@ async function adminLogin() {
 function updateAdminButtons() {
     const phase = state.gameState?.phase || 1;
     const revealed = state.gameState?.revealed || false;
+    const votingRevealed = state.gameState?.voting_revealed || false;
     const hasCurrentEvent = !!state.gameState?.current_event_id;
 
     document.getElementById('btn-start-phase2').style.display = phase === 1 ? 'block' : 'none';
     document.getElementById('btn-reveal').style.display = phase === 2 && !revealed && hasCurrentEvent ? 'block' : 'none';
     document.getElementById('btn-next-event').style.display = phase === 2 && revealed ? 'block' : 'none';
+
+    // Phase 3 buttons
+    const isGameOver = phase === 2 && !hasCurrentEvent;
+    document.getElementById('btn-start-phase3').style.display = isGameOver ? 'block' : 'none';
+    document.getElementById('btn-reveal-voting').style.display = phase === 3 && !votingRevealed ? 'block' : 'none';
+
     document.getElementById('btn-reset').style.display = 'block';
 }
 
@@ -545,7 +724,7 @@ async function adminNextEvent() {
 }
 
 async function adminReset() {
-    if (!confirm('Are you sure you want to reset the game? All events and guesses will be deleted.')) {
+    if (!confirm('Are you sure you want to reset the game? All events, guesses, and votes will be deleted.')) {
         return;
     }
 
@@ -557,6 +736,30 @@ async function adminReset() {
     } catch (error) {
         console.error('Error resetting:', error);
         showNotification('Error resetting game', 'error');
+    }
+}
+
+async function adminStartPhase3() {
+    try {
+        const gameState = await startPhase3();
+        state.gameState = gameState;
+        showNotification('Voting phase started!', 'success');
+        updateAdminButtons();
+    } catch (error) {
+        console.error('Error starting phase 3:', error);
+        showNotification('Error starting voting phase', 'error');
+    }
+}
+
+async function adminRevealVoting() {
+    try {
+        const gameState = await revealVotingResults();
+        state.gameState = gameState;
+        showNotification('Voting results revealed!', 'success');
+        updateAdminButtons();
+    } catch (error) {
+        console.error('Error revealing voting results:', error);
+        showNotification('Error revealing results', 'error');
     }
 }
 
@@ -574,6 +777,7 @@ function setupRealtimeSubscriptions() {
             state.currentUser = null;
             localStorage.removeItem('retrogeo_user');
             state.lastResetAt = newState.reset_at;
+            state.userVotes = {};  // Clear user votes
             updateCurrentUserDisplay();
             showView('view-username');
             updateAdminButtons();
@@ -587,7 +791,14 @@ function setupRealtimeSubscriptions() {
         if (previousState?.phase !== newState.phase) {
             if (newState.phase === 2) {
                 showNotification('Phase 2 has started!', 'info');
+            } else if (newState.phase === 3) {
+                showNotification('Voting phase has started!', 'info');
             }
+        }
+
+        // Check for voting reveal
+        if (previousState?.voting_revealed !== newState.voting_revealed && newState.voting_revealed) {
+            showNotification('Voting results are in!', 'info');
         }
 
         // Check for event change
